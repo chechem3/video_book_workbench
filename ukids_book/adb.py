@@ -3,7 +3,6 @@
 
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 from . import config
@@ -50,12 +49,21 @@ class AdbDevice:
         if r.returncode != 0:
             raise RuntimeError(f"adb pull 失败: {remote}\n{r.stderr}")
 
+    def screenshot(self) -> bytes:
+        """截取当前屏幕，返回 PNG 字节。"""
+        r = subprocess.run(
+            [self.adb, "-s", self.serial, "exec-out", "screencap", "-p"],
+            capture_output=True, timeout=30)
+        if not r.stdout.startswith(b"\x89PNG"):
+            raise RuntimeError("截图失败，adb 返回非 PNG 数据")
+        return r.stdout
+
     def ensure_ready(self) -> None:
         """确保设备在线（雷电偶尔需要主动 connect）。"""
         subprocess.run(
             [self.adb, "connect", "127.0.0.1:5555"],
             capture_output=True, text=True, timeout=10)
-        out = self.shell("devices") if False else subprocess.run(
+        out = subprocess.run(
             [self.adb, "devices"], capture_output=True, text=True,
             timeout=10).stdout
         online = [
@@ -65,14 +73,4 @@ class AdbDevice:
         if not online:
             raise RuntimeError("没有在线设备，请先启动雷电模拟器")
         if self.serial not in online and "emulator-" not in self.serial:
-            # 指定了非 emulator 序列号且不在线
-            if self.serial not in online:
-                raise RuntimeError(f"设备 {self.serial} 不在线: {online}")
-
-    def device_time(self) -> float:
-        """设备侧秒级时间戳（用于段时间轴）。"""
-        out = self.shell("date", "+%s.%N").strip()
-        try:
-            return float(out)
-        except ValueError:
-            return time.time()
+            raise RuntimeError(f"设备 {self.serial} 不在线: {online}")
