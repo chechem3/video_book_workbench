@@ -1,2 +1,6 @@
 # py313_adb_auto 环境依赖（conda create -n py313_adb_auto python=3.13 pillow）
 pillow>=10.0
+fastapi>=0.110
+uvicorn>=0.29
+pyyaml>=6.0
+rapidocr-onnxruntime>=1.2

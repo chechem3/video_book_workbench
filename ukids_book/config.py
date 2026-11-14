@@ -32,8 +32,23 @@ DEVICE_TMP_DIR = "/sdcard/ukcap"
 # ---- 分帧与镜头 ----
 EXTRACT_DT = 1.0             # 抽帧间隔（秒），下限 0.5
 MIN_SHOTS = 4                # 最短镜头帧数（dt=1s 时 ≈4s）
+JPEG_Q_SHOTS = 95            # 全尺寸帧 JPEG 质量（打印用）
+JPEG_Q_THUMB = 85            # 缩略图质量
+THUMB_WIDTH = 320            # 缩略图宽度（px）
+DIFF_MIN_TH, DIFF_MAX_TH = 12.0, 45.0   # 镜头差分阈值自适应区间
+DIFF_K = 3.0                 # 阈值 = clamp(μ + k·σ, min, max)
+CANDIDATES_MAX = 5           # 每镜头主图候选数（含中间帧）
 
 # ---- 合成 ----
 PAGE_WIDTH = 1200            # 长图宽度（px）
 SEG_GAP = 40                 # 段间距
 SUBTITLE_BAND_CROP = 0.18    # 主图底部字幕带裁剪比例（双行字幕上缘约 y=940）
+
+# ---- OCR ----
+OCR_DEVICE = "dml"             # dml=DirectML(GPU，需 onnxruntime-directml) / cpu
+
+# ---- Web 服务 ----
+WEB_HOST = "127.0.0.1"
+WEB_PORT = 8765
+LIVE_MAX_AGE = 2.0           # /live.jpg 缓存秒数（screencap ~1.1s/张）
+LIVE_WIDTH = 480             # 实时预览图宽度（px）

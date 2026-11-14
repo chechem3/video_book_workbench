@@ -1,0 +1,1127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>小小优趣画册工作台</title>
+<style>
+:root{
+  --bg:#f4f6f8; --card:#fff; --line:#e3e7eb; --txt:#26323c; --sub:#7b8794;
+  --blue:#1e6fd9; --blue-d:#1558ad; --red:#d94040; --green:#2e9e5b;
+  --orange:#e08a1e; --purple:#8a4fd3; --dark:#c22b2b;
+  --side-w:196px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font:14px/1.6 "Segoe UI",system-ui,"Microsoft YaHei",sans-serif;
+     background:var(--bg);color:var(--txt)}
+a{color:var(--blue);text-decoration:none}
+button{font:inherit;border:1px solid var(--line);background:#fff;color:var(--txt);
+       border-radius:8px;padding:7px 16px;cursor:pointer;transition:.15s}
+button:hover{border-color:var(--blue);color:var(--blue)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+button.primary:hover{background:var(--blue-d)}
+button.danger{color:var(--red)}
+button.danger:hover{border-color:var(--red)}
+button.mini{padding:2px 10px;font-size:12.5px;border-radius:6px}
+input,select{font:inherit;padding:7px 10px;border:1px solid var(--line);
+             border-radius:8px;background:#fff;max-width:100%}
+input:focus,select:focus{outline:2px solid #bcd7f5;border-color:var(--blue)}
+
+/* ---- 整体框架：左侧栏 + 主区 ---- */
+#layout{display:flex;min-height:100vh}
+#sidebar{width:var(--side-w);flex:0 0 var(--side-w);background:#fff;
+         border-right:1px solid var(--line);display:flex;flex-direction:column;
+         position:sticky;top:0;height:100vh;z-index:30}
+#sidebar .logo{padding:16px 16px 12px;font-weight:700;font-size:15px;line-height:1.35}
+#nav{display:flex;flex-direction:column;padding:4px 0}
+#nav .sect{padding:10px 16px 2px;font-size:11.5px;color:var(--sub);letter-spacing:.05em}
+#nav a{display:flex;gap:10px;align-items:center;padding:9px 16px;color:var(--txt);
+       cursor:pointer;border-right:3px solid transparent;user-select:none}
+#nav a .ic{width:20px;text-align:center;flex:0 0 20px}
+#nav a:hover{background:#f0f4f8}
+#nav a.on{background:#e8f1fc;color:var(--blue);font-weight:600;border-right-color:var(--blue)}
+#nav a.off{opacity:.38;pointer-events:none}
+.side-foot{margin-top:auto;padding:12px 16px;border-top:1px dashed var(--line);
+           font-size:12.5px;line-height:1.5}
+.side-foot .name{font-weight:600;word-break:break-all}
+#main{flex:1;min-width:0}          /* min-width:0 —— 允许内容随窗口收缩 */
+
+/* 通用 */
+.wrap{max-width:1280px;margin:0 auto;padding:20px}
+.badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;color:#fff}
+.badge.created{background:#8b98a5}.badge.recording{background:var(--red);animation:pulse 1.2s infinite}
+.badge.processing{background:var(--orange)}.badge.editing{background:var(--blue)}
+.badge.composing{background:var(--purple)}.badge.ready{background:var(--green)}
+.badge.failed{background:var(--dark)}
+@keyframes pulse{50%{opacity:.55}}
+.muted{color:var(--sub);font-size:12.5px}
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:99;
+       background:#2b3a4a;color:#fff;padding:10px 20px;border-radius:10px;
+       max-width:80vw;box-shadow:0 6px 24px rgba(0,0,0,.25);display:none}
+.dirty{display:inline-block;background:#fdf3e2;border:1px solid #f0d9ad;color:#9a6b12;
+       border-radius:8px;padding:3px 12px;font-size:12.5px}
+.errline{background:#fdeeee;border:1px solid #f2c4c4;color:#a33;border-radius:10px;
+         padding:8px 14px;margin:0 0 12px}
+
+/* 任务列表 */
+.newbar{display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap}
+.newbar input{flex:1;min-width:160px;max-width:320px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+.tcard{background:var(--card);border:1px solid var(--line);border-radius:12px;
+       padding:14px;display:flex;flex-direction:column;gap:6px}
+.tcard .name{font-weight:700;font-size:15px;word-break:break-all}
+.tcard .renin{width:100%;font-weight:700;padding:4px 8px}
+.tcard .ops{display:flex;gap:8px;margin-top:8px}
+.tcard .ops button{padding:4px 14px;font-size:13px}
+
+/* 录制视图 */
+.rec-layout{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);
+            gap:20px;align-items:start}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;
+       min-width:0}
+.live{position:relative;background:#10161c;border-radius:10px;overflow:hidden;
+      min-height:200px;display:flex;align-items:center;justify-content:center}
+.live img{width:100%;display:block}
+.live .off{color:#5b6b7a;padding:40px 0}
+.rec-meta{display:flex;flex-wrap:wrap;gap:18px;margin:14px 0 4px}
+.rec-meta .big{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+.recbtns{display:flex;gap:12px;margin-top:14px;flex-wrap:wrap;align-items:center}
+.recbtns button{padding:10px 22px;font-size:15px}
+.steps{margin-top:6px}
+.step{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px dashed var(--line)}
+.step:last-child{border-bottom:none}
+.step .ic{width:22px;text-align:center;flex:0 0 22px}
+.step.done .ic{color:var(--green)}.step.running .ic{color:var(--orange)}
+.step.pending .ic,.step.pending{color:var(--sub)}
+.step .nm{min-width:5em}
+.bar{height:8px;background:#e9edf1;border-radius:99px;overflow:hidden;margin:10px 0 6px}
+.bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--blue),#59a4f0);
+       transition:width .5s;border-radius:99px}
+.errbox{background:#fdeeee;border:1px solid #f2c4c4;color:#a33;border-radius:10px;
+        padding:10px 14px;margin-top:12px}
+.infobox{background:#ecf3fd;border:1px solid #bcd7f5;color:#255a9e;border-radius:10px;
+         padding:10px 14px;margin-top:12px}
+
+/* 编辑视图 */
+.edit-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,0.9fr);
+             gap:18px;align-items:start}
+.shots-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.scard{background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden;
+       cursor:pointer;position:relative;transition:.15s;min-width:0}
+.scard:hover{border-color:var(--blue);box-shadow:0 3px 12px rgba(30,111,217,.15)}
+.scard img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;background:#dfe5ea}
+.scard .cap{padding:6px 9px;display:flex;justify-content:space-between;font-size:12.5px}
+.scard .sid{position:absolute;top:6px;left:6px;background:rgba(20,30,40,.72);color:#fff;
+            border-radius:6px;padding:1px 8px;font-size:12px}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;align-items:center}
+.preview{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto;
+         background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0}
+.preview img.long{width:100%;display:block;border-radius:6px}
+.mode-tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.mode-tabs button{padding:4px 14px;font-size:13px}
+.mode-tabs button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+
+/* 弹层 & 抽屉 & 灯箱 */
+.overlay{position:fixed;inset:0;background:rgba(15,22,30,.55);z-index:50;
+         display:flex;align-items:center;justify-content:center;padding:24px}
+.modal{background:#fff;border-radius:14px;max-width:1280px;width:100%;max-height:88vh;
+       overflow:auto;padding:20px 22px}
+.mbody{display:grid;grid-template-columns:minmax(0,1fr) 440px;gap:18px;align-items:start}
+.mcol-preview{position:sticky;top:0}
+.mcol-preview img{width:100%;display:block;border:1px solid var(--line);
+                  border-radius:8px;background:#f0f2f4;cursor:zoom-in}
+@media (max-width:1150px){
+  .mbody{grid-template-columns:1fr}
+  .mcol-preview{position:static;order:-1}
+}
+.modal h3{margin:0 0 4px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.modal .h3ops{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.sechead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0 6px}
+.subs{max-height:460px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px}
+.subrow{padding:8px 6px;border-bottom:1px dashed var(--line)}
+.subrow:last-child{border-bottom:none}
+.subrow.minor{opacity:.62}
+.subrow .subhead{display:flex;gap:10px;font-size:12px;color:var(--sub);
+                 margin-bottom:4px;flex-wrap:wrap}
+.subrow .tag-ok{color:var(--green)}
+.subrow .dupmark{color:var(--orange)}
+.subrow img{width:100%;max-width:540px;border-radius:6px;cursor:zoom-in;display:block;
+            background:#dfe5ea}
+.subrow input{width:100%;margin-top:5px;padding:5px 9px;font-size:13px}
+#subsStatus{font-size:12px;color:var(--sub)}
+.frames{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px}
+.fitem2{position:relative;border-radius:8px;overflow:hidden;
+        border:2px solid transparent;background:#dfe5ea;min-width:0}
+.fitem2.sel{border-color:var(--red)}
+.fitem2 img{width:100%;display:block;cursor:zoom-in}
+.fitem2 .ck{position:absolute;top:4px;right:4px;width:18px;height:18px;accent-color:var(--red);
+            cursor:pointer}
+.fitem2 .mtag{position:absolute;top:4px;left:4px;background:rgba(46,158,91,.9);color:#fff;
+              font-size:11px;border-radius:5px;padding:0 6px}
+.fitem2 .setmain{position:absolute;top:3px;left:3px;width:24px;height:24px;border:none;
+                 border-radius:6px;background:rgba(20,30,40,.62);color:#fff;font-size:13px;
+                 line-height:1;padding:0;cursor:pointer}
+.fitem2 .setmain:hover{background:rgba(20,30,40,.85);transform:scale(1.12)}
+.fitem2 .setmain.on{background:var(--green)}
+.lightbox .lb-main{border-color:#fff;color:#fff;background:transparent}
+.lightbox .lb-main:hover{background:rgba(255,255,255,.14);color:#fff}
+.lightbox .lb-main.on{background:var(--green);border-color:var(--green)}
+.fitem2 .tcap{font-size:11px;color:var(--sub);text-align:center;padding:1px 0 2px;background:#fff}
+.modal .row{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;align-items:center}
+.drawer{position:fixed;top:0;right:-390px;width:370px;max-width:94vw;height:100vh;
+        background:#fff;z-index:60;box-shadow:-8px 0 30px rgba(0,0,0,.18);
+        transition:right .25s;padding:20px;overflow:auto}
+.drawer.open{right:0}
+.drawer h3{margin:0 0 4px;display:flex;justify-content:space-between;align-items:center}
+.drawer h4{margin:18px 0 2px;font-size:13px;color:var(--blue)}
+.drawer label{display:block;margin:12px 0 2px;font-weight:600;font-size:13px}
+.drawer input,.drawer select{width:100%}
+.drawer .hint{margin:2px 0 0;font-size:12px;color:var(--sub);line-height:1.5}
+.jobfloat{position:fixed;right:16px;bottom:16px;z-index:40;background:#fff;
+          border:1px solid var(--line);border-radius:12px;padding:12px 16px;
+          width:300px;max-width:80vw;box-shadow:0 8px 28px rgba(0,0,0,.16)}
+.jobfloat .t{font-weight:700;margin-bottom:4px}
+.lightbox{position:fixed;inset:0;background:rgba(8,12,18,.88);z-index:80;
+          display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+.lightbox img{max-width:96vw;max-height:88vh;border-radius:6px}
+.lightbox .cap{color:#cfd8e0;font-size:13px}
+.lightbox .nav{color:#fff;font-size:30px;cursor:pointer;user-select:none;
+               padding:6px 18px;border-radius:10px}
+.lightbox .nav:hover{background:rgba(255,255,255,.14)}
+.lightbox .close{position:absolute;top:14px;right:18px;color:#fff;font-size:26px;cursor:pointer}
+.lb-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;justify-content:center}
+
+/* ---- 响应式：中等宽度编辑区纵向堆叠；窄宽度侧栏折叠为图标 ---- */
+@media (max-width:1150px){
+  .edit-layout{grid-template-columns:1fr}
+  .preview{position:static;max-height:none}
+}
+@media (max-width:920px){
+  .rec-layout{grid-template-columns:1fr}
+  .wrap{padding:12px}
+  :root{--side-w:54px}
+  #sidebar .logo{padding:12px 0;text-align:center;font-size:17px}
+  #nav a{justify-content:center;padding:11px 0}
+  #nav a .tx{display:none}
+  #nav .sect,.side-foot{display:none}
+  .modal{padding:14px}
+}
+</style>
+</head>
+<body>
+<div id="layout">
+  <aside id="sidebar">
+    <div class="logo">📖 画册<br>工作台</div>
+    <nav id="nav">
+      <div class="sect">导航</div>
+      <a data-nav="tasks"><span class="ic">📋</span><span class="tx">任务列表</span></a>
+      <a data-nav="record"><span class="ic">⏺</span><span class="tx">录制</span></a>
+      <a data-nav="edit"><span class="ic">✏️</span><span class="tx">编辑</span></a>
+      <div class="sect">当前任务的操作</div>
+      <a data-nav="cfg"><span class="ic">⚙</span><span class="tx">配置</span></a>
+    </nav>
+    <div class="side-foot" id="side-task" style="display:none"></div>
+  </aside>
+  <main id="main"><div id="app" class="wrap"></div></main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const app = $("#app");
+let poll = null;                       // 当前视图轮询
+
+/* ---------- 基础 ---------- */
+function toast(msg, ok=false){ const t=$("#toast"); t.textContent=msg;
+  t.style.background = ok ? "#2e9e5b" : "#2b3a4a"; t.style.display="block";
+  clearTimeout(t._h); t._h=setTimeout(()=>t.style.display="none", 3200); }
+async function api(method, url, body){
+  const r = await fetch(url, {method, headers:{"Content-Type":"application/json"},
+    body: body===undefined ? undefined : JSON.stringify(body)});
+  let d = null; try{ d = await r.json(); }catch(e){}
+  if(!r.ok) throw new Error((d && d.detail) || r.statusText);
+  return d;
+}
+const esc = s => String(s??"").replace(/[&<>"']/g,
+  c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function fmtSec(s){ s=Math.max(0,Math.round(s)); const h=~~(s/3600),m=~~(s%3600/60),x=s%60;
+  const mm=String(m).padStart(2,"0"),xx=String(x).padStart(2,"0");
+  return h?`${h}:${mm}:${xx}`:`${m}:${xx}`; }
+const STATE_TXT = {created:"新建",recording:"录制中",processing:"处理中",
+  editing:"可编辑",composing:"出稿中",ready:"已出稿",failed:"失败"};
+const badge = st => `<span class="badge ${st}">${STATE_TXT[st]||st}</span>`;
+function stopPoll(){ if(poll){ clearInterval(poll); poll=null; } }
+
+/* ---------- 侧栏导航 ---------- */
+function updateSidebar(r){
+  const links = {};
+  document.querySelectorAll("#nav a").forEach(a => {
+    a.classList.remove("on");
+    links[a.dataset.nav] = a;
+  });
+  const TE = r.t ? encodeURIComponent(r.t) : null;
+  links.tasks.removeAttribute("href");
+  ["record","edit","cfg"].forEach(k => links[k].removeAttribute("href"));
+  if(r.v === "tasks"){
+    links.tasks.classList.add("on");
+    ["record","edit","cfg"].forEach(k => links[k].classList.add("off"));
+    setSideTask(null);
+  }else{
+    links.record.href = `#/task/${TE}/record`;
+    links.edit.href = `#/task/${TE}/edit`;
+    links.record.classList.remove("off");
+    links.edit.classList.remove("off");
+    (r.v === "record" ? links.record : links.edit).classList.add("on");
+    links.cfg.classList.remove("off");           // 配置仅编辑视图可用
+    links.cfg.classList.toggle("off", r.v !== "edit");
+  }
+}
+links_bind();
+function links_bind(){
+  const cfgLink = document.querySelector('#nav a[data-nav="cfg"]');
+  if(cfgLink) cfgLink.onclick = () => {
+    if(route().v !== "edit" || !window.__openCfg){ toast("配置在编辑页可用"); return; }
+    window.__openCfg();
+  };
+  document.querySelector('#nav a[data-nav="tasks"]').onclick = () =>
+    location.hash = "#/tasks";
+}
+let _sideTask = "";
+function setSideTask(t){                          // t: null 或 {label, state}
+  const key = t ? t.label + "|" + t.state : "";
+  if(key === _sideTask) return;
+  _sideTask = key;
+  const el = $("#side-task");
+  if(!t){ el.style.display = "none"; el.innerHTML = ""; return; }
+  el.style.display = "";
+  el.innerHTML = `<div class="name">${esc(t.label)}</div>${badge(t.state)}`;
+}
+
+/* ---------- 灯箱（点击放大，可选「设为主图」） ---------- */
+let lbCtx = { urls: [], i: 0, ctx: null };
+function openLightbox(urls, i, ctx){
+  lbCtx = { urls, i, ctx: ctx || null };
+  drawLightbox();
+}
+function drawLightbox(){
+  let box = $("#lightbox");
+  if(!box){
+    box = document.createElement("div");
+    box.id = "lightbox"; box.className = "lightbox";
+    box.innerHTML = `<span class="close" title="关闭 (Esc)">✕</span>
+      <div class="lb-row"><span class="nav" data-d="-1" title="上一张 (←)">‹</span>
+      <img><span class="nav" data-d="1" title="下一张 (→)">›</span></div>
+      <div class="lb-row"><button class="lb-main"></button><span class="cap"></span></div>`;
+    document.body.appendChild(box);
+    box.querySelector(".close").onclick = closeLightbox;
+    box.onclick = e => { if(e.target===box) closeLightbox(); };
+    box.querySelectorAll(".nav").forEach(n => n.onclick = () => lbStep(+n.dataset.d));
+  }
+  const { urls, i, ctx } = lbCtx;
+  if(!urls.length) return closeLightbox();
+  box.querySelector("img").src = urls[i];
+  const file = urls[i].split("/").pop().split("?")[0];
+  box.querySelector(".cap").textContent = `${i+1} / ${urls.length} · ${file}`;
+  const btn = box.querySelector(".lb-main");
+  if(ctx && ctx.onSetMain){
+    btn.style.display = "";
+    const mains = ctx.mains || (ctx.main ? [ctx.main] : []);
+    const isMain = mains.includes(file);
+    btn.textContent = isMain ? "★ 已是主图（点击移出）" : "☆ 加入主图";
+    btn.classList.toggle("on", isMain);
+    btn.disabled = false;
+    btn.onclick = async () => {
+      const nm = await ctx.onSetMain(file);
+      if(nm){ ctx.mains = nm; ctx.main = nm[0]; }
+      drawLightbox();
+    };
+  } else {
+    btn.style.display = "none";
+  }
+  box.style.display = "flex";
+}
+function closeLightbox(){ const b=$("#lightbox"); if(b) b.style.display="none"; }
+function lbStep(d){
+  const n = lbCtx.urls.length; if(!n) return;
+  lbCtx.i = (lbCtx.i + d + n) % n;
+  drawLightbox();
+}
+document.addEventListener("keydown", e => {
+  if($("#lightbox") && $("#lightbox").style.display!=="none"){
+    if(e.key==="Escape") closeLightbox();
+    else if(e.key==="ArrowLeft") lbStep(-1);
+    else if(e.key==="ArrowRight") lbStep(1);
+    return;
+  }
+  const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
+  if((e.key==="PageDown" || e.key==="PageUp") &&
+     $("#modalbox .overlay") && !inField && window.__shotNav){
+    e.preventDefault();
+    window.__shotNav(e.key==="PageUp" ? -1 : 1);
+    return;
+  }
+  if(e.key==="Escape"){
+    const m = $("#modalbox .overlay");
+    if(m){ $("#modalbox").innerHTML=""; window.__shotNav = null; return; }
+    const d = $("#cfg"); if(d && d.classList.contains("open")) d.classList.remove("open");
+  }
+});
+
+/* ---------- 路由 ---------- */
+window.addEventListener("hashchange", render);
+function route(){
+  const h = location.hash || "#/tasks";
+  let m;
+  if((m = h.match(/^#\/task\/([^/]+)\/record/))) return {v:"record", t:decodeURIComponent(m[1])};
+  if((m = h.match(/^#\/task\/([^/]+)\/edit/)))   return {v:"edit",   t:decodeURIComponent(m[1])};
+  return {v:"tasks"};
+}
+function render(){ stopPoll(); app.innerHTML="";
+  const r = route();
+  updateSidebar(r);
+  if(r.v==="tasks") viewTasks();
+  else if(r.v==="record") viewRecord(r.t);
+  else viewEdit(r.t);
+}
+
+/* ---------- 视图①：任务列表 ---------- */
+async function viewTasks(){
+  app.innerHTML = `
+    <div class="newbar">
+      <input id="tname" placeholder="任务名，如 E317" maxlength="24">
+      <button class="primary" id="tnew">＋ 新建任务</button>
+    </div>
+    <div class="grid" id="tgrid"></div>`;
+  $("#tnew").onclick = async () => {
+    const name = $("#tname").value.trim();
+    if(!name) return toast("请输入任务名");
+    try{ const t = await api("POST","/api/tasks",{name});
+      location.hash = `#/task/${encodeURIComponent(t.name)}/record`;
+    }catch(e){ toast("新建失败："+e.message); }
+  };
+  $("#tname").addEventListener("keydown", e=>{ if(e.key==="Enter") $("#tnew").click(); });
+
+  let lastJson = "";
+  async function tick(){
+    let ts; try{ ts = (await api("GET","/api/tasks")).tasks; }
+    catch(e){ return; }
+    if(route().v!=="tasks") return;
+    const j = JSON.stringify(ts);
+    if(j === lastJson) return;                    // 数据没变不重渲，避免打断点击
+    lastJson = j;
+    const g = $("#tgrid"); if(!g) return;
+    g.innerHTML = ts.length ? "" : `<div class="muted">还没有任务。新建一个，然后去模拟器点开视频播放。</div>`;
+    for(const t of ts){
+      const st = t.stats||{};
+      const info = st.frames ? `${st.shots} 镜头 · ${st.frames} 帧${st.pages?` · ${st.pages} 页`:""}` : "—";
+      const job = t.job ? ` ${t.job.kind} ${t.job.progress}%` : "";
+      const target = ["created","recording","processing","failed"].includes(t.state) ? "record" : "edit";
+      const el = document.createElement("div");
+      el.className = "tcard";
+      el.innerHTML = `
+        <div class="name">${esc(t.label||t.name)}</div>
+        ${badge(t.state)}<span class="muted">${esc(t.name)}</span>
+        <div class="muted">${info}${job}</div>
+        ${t.error?`<div class="muted" style="color:var(--dark)">${esc(t.error)}</div>`:""}
+        <div class="ops">
+          <button class="primary">打开</button>
+          <button class="copy">复制</button>
+          <button class="ren">✏️ 改名</button>
+          <button class="danger">删除</button>
+        </div>`;
+      el.querySelector(".primary").onclick = () =>
+        location.hash = `#/task/${encodeURIComponent(t.name)}/${target}`;
+      el.querySelector(".copy").onclick = async () => {
+        try{
+          const nt = await api("POST",`/api/tasks/${encodeURIComponent(t.name)}/clone`);
+          toast(`已复制为「${nt.label}」，可改名后放心编辑`, true); tick();
+        }catch(e){ toast(e.message); }
+      };
+      el.querySelector(".ren").onclick = () => {          // 行内改名
+        const nameEl = el.querySelector(".name");
+        const old = t.label || t.name;
+        nameEl.innerHTML = `<input class="renin" value="${esc(old)}">`;
+        const inp = nameEl.querySelector("input");
+        inp.focus(); inp.select();
+        let done = false;
+        const finish = async (save) => {
+          if (done) return;
+          done = true;
+          const v = inp.value.trim();
+          if (!save || !v || v === old) { nameEl.textContent = old; return; }
+          try{
+            await api("PATCH",`/api/tasks/${encodeURIComponent(t.name)}`,
+                      {label: v});
+            toast("已改名", true); tick();
+          }catch(e){
+            toast(e.message); nameEl.textContent = old;
+          }
+        };
+        inp.onkeydown = e => {
+          if (e.key === "Enter") finish(true);
+          else if (e.key === "Escape") finish(false);
+        };
+        inp.onblur = () => finish(true);
+      };
+      el.querySelector(".danger").onclick = async () => {
+        if(!confirm(`删除任务「${t.label||t.name}」的全部数据？不可恢复。`)) return;
+        try{ await api("DELETE",`/api/tasks/${encodeURIComponent(t.name)}`); tick(); }
+        catch(e){ toast(e.message); }
+      };
+      g.appendChild(el);
+    }
+  }
+  await tick();
+  poll = setInterval(tick, 2000);
+}
+
+/* ---------- 视图②：录制 ---------- */
+const HINTS = [[1275,"21:15（默认一集）"],[600,"10:00"],[300,"5:00"],[0,"不自动停（手动停）"]];
+
+async function viewRecord(t){
+  const TE = encodeURIComponent(t);
+  app.innerHTML = `
+    <div class="rec-layout">
+      <div class="panel">
+        <div class="live" id="livebox"><div class="off">实时画面在「新建/录制中」显示</div></div>
+        <div class="rec-meta">
+          <div><div class="muted">已录时长</div><div class="big" id="elapsed">--:--</div></div>
+          <div><div class="muted">段数</div><div class="big" id="segs">-</div></div>
+          <div><div class="muted">设备占用</div><div class="big" id="size">-</div></div>
+        </div>
+        <div class="recbtns">
+          <span>预计时长
+            <select id="hint">${HINTS.map(([v,l])=>`<option value="${v}">${l}</option>`).join("")}</select>
+          </span>
+          <button class="primary" id="bstart">● 开始录制</button>
+          <button class="danger" id="bstop" disabled>■ 停止并处理</button>
+          <button id="bretry" style="display:none">↻ 重试</button>
+        </div>
+        <p class="muted">提示：先在模拟器里点开视频并播放，再开始录制；实时画面用于确认录的内容对。</p>
+        <div id="errbox"></div>
+      </div>
+      <div class="panel">
+        <b>停止后自动执行</b>
+        <div class="steps" id="steps">
+          <div class="step pending"><span class="ic">○</span><span class="nm">拉回录像</span><span class="muted"></span></div>
+          <div class="step pending"><span class="ic">○</span><span class="nm">分帧</span><span class="muted"></span></div>
+          <div class="step pending"><span class="ic">○</span><span class="nm">切镜头</span><span class="muted"></span></div>
+        </div>
+        <div class="bar" style="display:none"><i id="pbar" style="width:0%"></i></div>
+      </div>
+    </div>`;
+  const bS=$("#bstart"), bT=$("#bstop"), bR=$("#bretry");
+  bS.onclick = async () => {
+    const hv = +$("#hint").value;
+    try{
+      await api("POST",`/api/tasks/${TE}/record/start`,{duration_hint: hv||null});
+      toast("录制开始", true); tick();
+    }catch(e){ toast(e.message); }
+  };
+  bT.onclick = async () => {
+    if(!confirm("停止录制并自动处理？")) return;
+    try{ await api("POST",`/api/tasks/${TE}/record/stop`); toast("已停止，处理中…", true); }
+    catch(e){ toast(e.message); }
+  };
+  bR.onclick = async () => {
+    try{ const r = await api("POST",`/api/tasks/${TE}/retry`);
+      toast("已重试 → "+(STATE_TXT[r.state]||r.state), true);
+      if(r.state==="editing") location.hash = `#/task/${TE}/edit`; else tick();
+    }catch(e){ toast(e.message); }
+  };
+
+  function liveTick(){
+    const st = viewRecord._st;
+    const want = ["created","recording","failed"].includes(st);
+    const box = $("#livebox");
+    if(!box) return;
+    const img = $("#live");
+    if(want && !img){
+      box.innerHTML = `<img id="live" alt="设备实时画面">`;
+      $("#live").onerror = () => box.innerHTML = `<div class="off">设备画面暂不可用（模拟器未启动？）</div>`;
+    }
+    if(!want && img){
+      box.innerHTML = `<div class="off">实时画面在「新建/录制中」显示</div>`;
+    }
+  }
+  setInterval(() => { if(route().v==="record" &&
+      ["created","recording","failed"].includes(viewRecord._st||"")){
+    const img = $("#live");
+    if(img) img.src = `/api/tasks/${TE}/live.jpg?ts=${Date.now()}`;
+  } }, 3000);
+
+  const IC = {done:"✓", running:"◐", pending:"○"};
+  function drawJob(job){
+    $("#steps").innerHTML = job.steps.map((s,i)=>{
+      const st = s.status||"pending";
+      return `<div class="step ${st}"><span class="ic">${IC[st]}</span>
+              <span class="nm">${esc(s.name)}</span><span class="muted">${esc(s.detail)}</span></div>`;
+    }).join("");
+    const bar = $(".bar"); bar.style.display = "block";
+    $("#pbar").style.width = (job.progress||0)+"%";
+  }
+
+  let lastState = null;      // 区分「管线刚完成」与「进入前就已处理完」
+  async function tick(){
+    let d; try{ d = await api("GET",`/api/tasks/${TE}`); }
+    catch(e){ app.innerHTML=`<div class="errbox">任务不存在或服务未启动：${esc(e.message)}
+      <a href="#/tasks">返回列表</a></div>`; stopPoll(); return; }
+    if(route().v!=="record" || route().t!==t) return;
+    viewRecord._st = d.state;
+    setSideTask({label: d.label||d.name, state: d.state});
+    liveTick();
+    if(d.record){
+      $("#elapsed").textContent = fmtSec(d.record.elapsed||0);
+      $("#segs").textContent = d.record.segments;
+      $("#size").textContent = d.record.size_mb!=null ? (d.record.size_mb+" MB") : "—";
+    } else if(d.state!=="recording"){ $("#elapsed").textContent="—"; $("#segs").textContent="—"; }
+    bS.disabled = d.state!=="created";
+    bT.disabled = d.state!=="recording";
+    $("#hint").disabled = d.state!=="created";
+    bR.style.display = d.state==="failed" ? "" : "none";
+    const errHtml = d.error ? `<div class="errbox">⚠ ${esc(d.error)}</div>` : "";
+    const infoHtml = d.state==="editing"
+      ? `<div class="infobox">ℹ 该任务已完成处理（录制页仅用于新录制）。<a href="#/task/${TE}/edit">→ 去编辑</a></div>` : "";
+    $("#errbox").innerHTML = errHtml + infoHtml;
+    if(d.job && !d.job.done) drawJob(d.job);
+    if(d.state==="editing" && (lastState==="processing" || lastState==="recording")){
+      toast("处理完成，进入编辑", true);            // 只有「看着它跑完」才自动跳转
+      location.hash = `#/task/${TE}/edit`;
+    }
+    lastState = d.state;
+  }
+  await tick();
+  poll = setInterval(tick, 1000);
+}
+
+/* ---------- 视图③：编辑 ---------- */
+async function viewEdit(t){
+  const TE = encodeURIComponent(t);
+  let doc = null, task = null, ver = Date.now();
+  const times = () => (doc && doc.times) || {};
+  const shotUrl = f => `/files/${TE}/shots/${f}`;
+  const thumbUrl = f => `/files/${TE}/thumbs/${f}?v=${ver}`;
+
+  app.innerHTML = `
+    <div class="toolbar">
+      <button class="primary" id="bbuild">↻ 重出稿</button>
+      <a id="apdf" href="#" download><button>⬇ PDF</button></a>
+      <span id="dirty"></span>
+    </div>
+    <div id="errline"></div>
+    <div class="edit-layout">
+      <div class="panel">
+        <div id="shothead" class="muted" style="margin-bottom:10px"></div>
+        <div class="shots-grid" id="sgrid"></div>
+      </div>
+      <div class="preview">
+        <div class="mode-tabs"><button class="on">逐页预览（与打印一致）</button></div>
+        <div id="pbody"></div>
+      </div>
+    </div>
+
+    <div class="drawer" id="cfg">
+      <h3>配置 <button class="mini" id="cfgclose">✕ 关闭</button></h3>
+      <p class="muted">改动保存到任务，出稿类改动下次「重出稿」生效。</p>
+
+      <h4>出稿</h4>
+      <label>纸张</label>
+      <select id="ipaper">
+        <option value="a4">A4（默认，210×297mm）</option>
+        <option value="a3">A3（297×420mm，大页面）</option>
+        <option value="a5">A5（148×210mm，便携）</option>
+      </select>
+      <p class="hint">打印用的纸型，300dpi。页面越大，同一段视频分页越少、每页图越大。</p>
+      <label>页面方向</label>
+      <select id="iori">
+        <option value="portrait">纵向（竖版）</option>
+        <option value="landscape">横向（横版）</option>
+      </select>
+      <p class="hint">16:9 的视频满宽排版时纵向更饱满；横向页面更宽、主图上下留白更多。</p>
+      <label>每页镜头数</label>
+      <select id="ipageshots">
+        <option value="1">1 个主图/页（大图，默认）</option>
+        <option value="2">2 个主图/页（左右排开）</option>
+        <option value="4">4 个主图/页（两行两列）</option>
+      </select>
+      <p class="hint">按镜头顺序切页：2 个=相邻两镜头左右并排，4 个=四镜头田字格。
+        台词跟在各自主图下方。</p>
+      <p class="hint">台词为 OCR 预填 + 弹层内人工校对（对照字幕截图修改），出稿以校对后的文本排版。</p>
+
+      <h4>重抽帧（破坏性）</h4>
+      <label>抽帧间隔 dt（秒，0.5–3）</label>
+      <input id="idt" type="number" step="0.5" min="0.5" max="3">
+      <p class="hint">每隔 dt 秒从录像取一帧。调小：帧更多、字幕更不容易漏、镜头边界更准，
+        但处理更慢、审校量更大；调大反之。一集 21 分钟建议 1.0s。</p>
+      <button class="danger" id="breex" style="margin-top:8px">重抽帧（覆盖全部编辑！）</button>
+      <p class="hint">从 raw/ 录像重新抽帧并重切镜头——主图挑选、删帧、移动等全部编辑丢失。</p>
+
+      <h4>重分析（破坏性）</h4>
+      <label>镜头差分阈值（清空=自适应）</label>
+      <input id="ith" type="number" step="0.5" min="1" max="120" placeholder="自动（12–45）">
+      <p class="hint">相邻两帧的平均差异（0–255）超过阈值即判为「切镜头」。
+        值大→镜头少而长（不同场景可能被并在一起）；值小→切得细（同一场景可能被拆开）。
+        上次结果见镜头列表标题，例如「阈值 45」；拿不准就留空自动。</p>
+      <label>最短镜头帧数 min_shots</label>
+      <input id="ims" type="number" step="1" min="1" max="60">
+      <p class="hint">不足这个帧数的碎镜头会自动并入前一镜头（dt=1s 时 4 帧≈4 秒）。
+        碎镜头太多就调大。</p>
+      <button class="danger" id="brean" style="margin-top:8px">重分析（覆盖镜头划分！）</button>
+      <p class="hint">不重新抽帧、只重新切镜头——删帧/移动会丢失，
+        但未变动的镜头尽量保留人工挑选的主图。</p>
+    </div>
+    <div id="modalbox"></div>
+    <div id="jobbox"></div>`;
+
+  /* -- 数据加载 -- */
+  async function loadTask(){ task = await api("GET",`/api/tasks/${TE}`); }
+  async function loadShots(){
+    try{ doc = await api("GET",`/api/tasks/${TE}/shots`); }
+    catch(e){ doc = null; }
+  }
+
+  /* -- 顶栏状态 -- */
+  function drawTop(){
+    const has = task && task.has_output;
+    const label = (task && task.label) || t;
+    $("#apdf").href = has ? `/files/${TE}/output/book.pdf` : "#";
+    $("#apdf").download = label + ".pdf";
+    $("#dirty").innerHTML = (has && task.state==="editing")
+      ? `<span class="dirty">⚠ 有修改未出稿</span>` : "";
+    $("#errline").innerHTML = (task && task.error)
+      ? `<div class="errline">⚠ ${esc(task.error)}</div>` : "";
+    setSideTask({label, state: task.state});
+  }
+
+  /* -- 镜头网格 -- */
+  function drawGrid(){
+    const g = $("#sgrid");
+    if(!doc || !doc.shots.length){
+      $("#shothead").textContent = "暂无镜头数据（先完成录制处理）"; g.innerHTML=""; return;
+    }
+    const dt = doc.meta.dt||1;
+    $("#shothead").innerHTML =
+      `<b>${doc.shots.length}</b> 个镜头 · 阈值 ${doc.meta.threshold} · min_shots ${doc.meta.min_shots}
+       · 点击镜头卡片进行编辑`;
+    g.innerHTML = "";
+    const tm = times();
+    for(const sh of doc.shots){
+      const el = document.createElement("div");
+      el.className = "scard";
+      const t0 = tm[sh.others[0]];
+      el.innerHTML = `
+        <img loading="lazy" src="${thumbUrl(sh.main)}">
+        <span class="sid">#${sh.id}</span>
+        <div class="cap"><span>${Math.round(sh.others.length*dt)}s${t0!=null?` · ${fmtSec(t0)}`:""}</span>
+          <span>${(sh.mains&&sh.mains.length>1)?`主图×${sh.mains.length} · `:""}${sh.others.length}帧 · ≈${sh.subs??0}条</span></div>`;
+      el.onclick = () => openModal(sh.id);
+      g.appendChild(el);
+    }
+  }
+
+  /* -- 预览 -- */
+  function drawPreview(){
+    const pb = $("#pbody");
+    const has = task && task.has_output;
+    if(!has){
+      pb.innerHTML = `<p class="muted">尚未出稿。点左上「重出稿」生成 PDF。</p>`; return;
+    }
+    const n = (task.stats&&task.stats.pages)||0;
+    pb.innerHTML = n ? Array.from({length:n},(_,i)=>
+      `<img class="long" loading="lazy" src="/files/${TE}/pages/page_${String(i+1).padStart(3,"0")}.png?v=${ver}">`
+    ).join("") : `<p class="muted">没有分页数据。</p>`;
+  }
+
+  /* -- 出稿 / 配置 -- */
+  $("#bbuild").onclick = async () => {
+    try{ await api("POST",`/api/tasks/${TE}/rebuild`,{});
+      toast("出稿中…", true);
+    }catch(e){ toast(e.message); }
+  };
+  const cfg = $("#cfg");
+  $("#cfgclose").onclick = () => cfg.classList.remove("open");
+  window.__openCfg = () => {
+    if(doc){ $("#idt").value = doc.meta.dt;
+             $("#ith").value = doc.meta.threshold ?? "";   // 默认带出上次所用阈值
+             $("#ims").value = doc.meta.min_shots; }
+    $("#ipaper").value = (task && task.paper) || "a4";
+    $("#iori").value = (task && task.orientation) || "portrait";
+    const psVal = (task && task.page_shots) || "1";
+    $("#ipageshots").value = ["1","2","4"].includes(psVal) ? psVal : "1";
+    cfg.classList.add("open");
+  };
+  $("#ipaper").onchange = savePrefs;
+  $("#iori").onchange = savePrefs;
+  $("#ipageshots").onchange = savePrefs;
+  async function savePrefs(){
+    try{ await api("PATCH",`/api/tasks/${TE}`,
+        {paper: $("#ipaper").value, orientation: $("#iori").value,
+         page_shots: $("#ipageshots").value});
+      toast("已保存，出稿时生效", true);
+    }catch(e){ toast(e.message); }
+  }
+  $("#breex").onclick = async () => {
+    const dt = +$("#idt").value;
+    if(!(dt>=0.5&&dt<=3)) return toast("dt 需在 0.5–3 之间");
+    if(!confirm(`按 dt=${dt}s 重新抽帧？\n全部帧与镜头将重建，人工编辑全部丢失！`)) return;
+    try{ await api("POST",`/api/tasks/${TE}/reextract`,{dt});
+      cfg.classList.remove("open"); toast("重抽帧中…", true);
+    }catch(e){ toast(e.message); }
+  };
+  $("#brean").onclick = async () => {
+    const th = $("#ith").value ? +$("#ith").value : null;
+    const ms = +$("#ims").value || null;
+    if(!confirm(`重新切镜头（阈值 ${th??"自适应"} / min_shots ${ms??"默认"}）？\n镜头划分与字幕条删除将重建，主图尽量保留。`)) return;
+    try{ await api("POST",`/api/tasks/${TE}/reanalyze`,{th, min_shots:ms});
+      cfg.classList.remove("open"); toast("重分析中…", true);
+    }catch(e){ toast(e.message); }
+  };
+
+  /* -- 镜头弹层 -- */
+  let selFrames = new Set();
+  function openModal(sid){
+    let sh = doc.shots.find(s=>s.id===sid); if(!sh) return;   // let：applyMain 会重绑
+    selFrames = new Set();
+    const canPrev = doc.shots[0].id !== sid;
+    const canNext = doc.shots[doc.shots.length-1].id !== sid;
+    $("#modalbox").innerHTML = `
+      <div class="overlay" id="ovl">
+        <div class="modal">
+          <h3><span>镜头 #${sh.id} · ${sh.others.length} 帧 · 主图×${(sh.mains||[sh.main]).length} · ≈${sh.subs??0} 条字幕</span>
+              <span class="h3ops">
+                <button class="mini" id="mprevshot" ${doc.shots[0].id!==sh.id?"":"disabled"}>◀ 上一镜头</button>
+                <button class="mini" id="mnextshot" ${doc.shots[doc.shots.length-1].id!==sh.id?"":"disabled"}>下一镜头 ▶</button>
+                <button id="mclose">✕ 关闭</button>
+              </span></h3>
+          <div class="mbody">
+          <div class="mcol-edit">
+          <div class="sechead"><b>全部帧</b>
+            <span class="muted">点图放大 · ★ 设为主图 · 勾选后删除/移动</span>
+            <span style="flex:1"></span>
+            <button class="mini" id="selall">全选</button>
+            <button class="mini" id="selnone">全不选</button>
+            <button class="mini" id="selinv">反选</button>
+          </div>
+          <div class="frames" id="fr"></div>
+          <div class="row">
+            <button class="danger" id="mdel">删除勾选的 <span id="nsel">0</span> 帧</button>
+          </div>
+          <div class="row">
+            <button id="mprev" ${canPrev?"":"disabled"}>◀ 移到上一镜头</button>
+            <button id="mnext" ${canNext?"":"disabled"}>移到下一镜头 ▶</button>
+            <button id="mnew">⤓ 拆分为新镜头</button>
+            <span class="muted">（作用于勾选帧）</span>
+            <span style="flex:1"></span>
+            <button id="mmerge">并入上一镜头</button>
+            <button class="danger" id="mkill">删除整个镜头</button>
+          </div>
+          <div class="sechead"><b>台词校对</b>
+            <span class="muted">对照截图修正 OCR · 留空的帧不出台词 · 修改自动保存</span>
+            <span style="flex:1"></span>
+            <span id="subsStatus"></span>
+            <button class="mini" id="mocr">🤖 识别缺失</button>
+          </div>
+          <div class="subs" id="subs">加载中…</div>
+          </div>
+          <div class="mcol-preview">
+            <div class="sechead"><b>本页预览</b></div>
+            <img id="pvimg" alt="成页预览">
+            <p class="muted">与出稿同一渲染器实时生成，随修改自动刷新。</p>
+          </div>
+          </div>
+        </div>
+      </div>`;
+    const fr = $("#fr");
+    const tm = times();
+    async function toggleMain(f){
+      const mains = sh.mains || [sh.main];
+      const next = mains.includes(f) ? mains.filter(x => x !== f) : [...mains, f];
+      if(!next.length) { toast("至少保留一张主图"); return null; }
+      try{
+        doc = await api("PATCH",`/api/tasks/${TE}/shots/${sh.id}`, {mains: next});
+        const ns = doc.shots.find(s => s.id === sh.id);
+        if(ns) sh = ns;
+        drawGrid();
+        refreshMainMarks();
+        refreshPreview();
+        const h = document.querySelector(".modal h3 span");
+        if(h) h.textContent = `镜头 #${sh.id} · ${sh.others.length} 帧 · 主图×${(sh.mains||[sh.main]).length} · ≈${sh.subs??0} 条字幕`;
+        toast(next.length > 1 ? `已设 ${next.length} 张主图` : "主图已更新", true);
+        return sh.mains || [sh.main];
+      }catch(e){ toast(e.message); return null; }
+    }
+    function refreshMainMarks(){          // 原位刷新星标（多主图多星），不重建弹层
+      const mains = sh.mains || [sh.main];
+      fr.querySelectorAll(".fitem2").forEach(el => {
+        const b = el.querySelector(".setmain");
+        if(b) b.classList.toggle("on", mains.includes(el.dataset.f));
+      });
+    }
+    function drawFrames(){
+      fr.innerHTML = "";
+      for(const f of sh.others){
+        const el = document.createElement("div");
+        el.className = "fitem2"+(selFrames.has(f)?" sel":"");
+        el.dataset.f = f;
+        const cap = tm[f]!=null ? fmtSec(tm[f]) : "";
+        el.innerHTML = `
+          <button class="setmain${f===sh.main?" on":""}" title="设为主图">★</button>
+          <input class="ck" type="checkbox" ${selFrames.has(f)?"checked":""}>
+          <img loading="lazy" src="${thumbUrl(f)}">
+          ${cap?`<div class="tcap">${cap}</div>`:""}`;
+        el.querySelector("img").onclick = () =>
+          openLightbox(sh.others.map(shotUrl), sh.others.indexOf(f),
+                       {main: sh.main, mains: sh.mains || [sh.main],
+                        onSetMain: toggleMain});
+        el.querySelector(".setmain").onclick = e => {
+          e.stopPropagation(); toggleMain(f);
+        };
+        el.querySelector(".ck").onclick = e => {
+          e.stopPropagation();
+          selFrames.has(f) ? selFrames.delete(f) : selFrames.add(f);
+          syncSel();
+        };
+        fr.appendChild(el);
+      }
+    }
+    function syncSel(){
+      fr.querySelectorAll(".fitem2").forEach(el => {
+        const on = selFrames.has(el.dataset.f);
+        el.classList.toggle("sel", on);
+        const ck = el.querySelector(".ck"); if(ck) ck.checked = on;
+      });
+      const n = $("#nsel"); if(n) n.textContent = selFrames.size;
+      const has = selFrames.size > 0;
+      ["mprev","mnext","mnew"].forEach(id => { const b=$("#"+id); if(b) b.disabled = !has || (id==="mprev"&&!canPrev) || (id==="mnext"&&!canNext); });
+    }
+    drawFrames();
+    /* ---- 本页预览（右栏吸顶，服务端真实渲染，随修改刷新） ---- */
+    function refreshPreview(){
+      const im = $("#pvimg"); if(!im) return;
+      im.src = `/api/tasks/${TE}/shots/${sh.id}/preview.jpg?v=${Date.now()}`;
+    }
+    $("#pvimg").onclick = () =>                       // 点预览 → 灯箱全屏看
+      openLightbox([$("#pvimg").src], 0);
+    refreshPreview();
+    /* ---- 台词校对区：对照字幕带截图修正 OCR ---- */
+    let stripSet = new Set(), saveTimer = null, savedOnce = false;
+    const subsBox = () => $("#subs");
+    // 跨镜头同句上下文：本镜头首帧之前，全局序里最后一条台词的归一化值
+    const _norm = s => (s||"").toLowerCase().replace(/[\W_]+/gu, "");
+    let prevBeforeShot = "";
+    {
+      const idx = doc.shots.findIndex(s => s.id === sh.id);
+      outer: for (let i = idx - 1; i >= 0; i--) {
+        for (let j = doc.shots[i].others.length - 1; j >= 0; j--) {
+          const t = (doc.texts||{})[doc.shots[i].others[j]] || {};
+          const nm = _norm(t.en) || _norm(t.zh);
+          if (nm) { prevBeforeShot = nm; break outer; }
+        }
+      }
+    }
+    function renderSubs(){
+      const box = subsBox(); if(!box) return;
+      const tm = times();
+      const all = (doc && doc.texts) || {};
+      box.innerHTML = sh.others.map(f => {
+        const t = all[f] || {en:"", zh:""};
+        const hasText = !!(t.en || t.zh);
+        const isStrip = stripSet.has(f);
+        const minor = !hasText && !isStrip;
+        const cap = tm[f]!=null ? fmtSec(tm[f]) : f;
+        return `<div class="subrow${minor?" minor":""}" data-f="${f}">
+          <div class="subhead"><span>${cap}</span>
+            ${f===sh.main?'<span>主图</span>':''}
+            ${isStrip?'<span class="tag-ok">● 检出字幕</span>':'<span>无字幕</span>'}
+            <span class="dupmark"></span>
+          </div>
+          <img loading="lazy" src="/files/${TE}/strips/${f}" alt="${f}">
+          <input class="ten" placeholder="英文台词（对照上图校对）" value="${esc(t.en)}">
+          <input class="tzh" placeholder="中文台词" value="${esc(t.zh)}">
+        </div>`;
+      }).join("");
+      box.querySelectorAll(".subrow img").forEach(imgEl => {
+        imgEl.onclick = () => {
+          const urls = sh.others.map(f => `/files/${TE}/strips/${f}`);
+          const f = imgEl.closest(".subrow").dataset.f;
+          openLightbox(urls, sh.others.indexOf(f));
+        };
+      });
+      box.querySelectorAll("input").forEach(inp => {
+        inp.oninput = () => {          // 防抖自动保存
+          clearTimeout(saveTimer);
+          saveTimer = setTimeout(saveSubs, 700);
+          updateDupBadges();
+        };
+      });
+      updateDupBadges();
+    }
+    function updateDupBadges(){        // 与出稿 build_lines 同规则（含跨镜头首条）
+      let last = prevBeforeShot;
+      (subsBox() ? [...subsBox().querySelectorAll(".subrow")] : []).forEach(row => {
+        const badge = row.querySelector(".dupmark");
+        if(!badge) return;
+        const en = row.querySelector(".ten").value.trim();
+        const zh = row.querySelector(".tzh").value.trim();
+        if(!en && !zh){ badge.textContent = ""; return; }
+        const nm = _norm(en) || _norm(zh);
+        badge.textContent = (nm && nm === last)
+          ? "⟲ 与上一条同句 · 出稿只保留一条" : "";
+        if(!(nm && nm === last)) last = nm;
+      });
+    }
+    async function saveSubs(){
+      const box = subsBox(); if(!box) return;
+      const texts = {};
+      box.querySelectorAll(".subrow").forEach(row => {
+        texts[row.dataset.f] = {
+          en: row.querySelector(".ten").value.trim(),
+          zh: row.querySelector(".tzh").value.trim(),
+        };
+      });
+      try{
+        await api("PUT",`/api/tasks/${TE}/shots/${sh.id}/texts`, {texts});
+        doc.texts = Object.assign((doc.texts||{}), texts);
+        const st = $("#subsStatus");
+        if(st) st.textContent = "✓ 已保存";
+        box.querySelectorAll(".subrow").forEach(r => {
+          const t = texts[r.dataset.f];
+          r.classList.toggle("minor", !(t.en||t.zh) && !stripSet.has(r.dataset.f));
+        });
+        updateDupBadges();
+        refreshPreview();
+      }catch(e){ toast("保存失败："+e.message); }
+    }
+    async function loadStrips(){
+      try{
+        const r = await api("GET",`/api/tasks/${TE}/shots/${sh.id}/strips`);
+        stripSet = new Set(r.frames);
+        if(r.texts) doc.texts = Object.assign((doc.texts||{}), r.texts);
+        renderSubs();
+      }catch(e){ const b=subsBox(); if(b) b.textContent = "加载失败：" + e.message; }
+    }
+    loadStrips();
+    $("#mocr").onclick = async () => {
+      $("#subsStatus").textContent = "识别中…";
+      try{
+        const r = await api("POST",`/api/tasks/${TE}/shots/${sh.id}/ocr`);
+        stripSet = new Set(r.frames);
+        if(r.texts) doc.texts = Object.assign((doc.texts||{}), r.texts);
+        renderSubs();
+        refreshPreview();
+        $("#subsStatus").textContent = "✓ 识别完成";
+      }catch(e){ toast(e.message); $("#subsStatus").textContent = ""; }
+    };
+    const close = () => { $("#modalbox").innerHTML=""; window.__shotNav = null; };
+    $("#mclose").onclick = close;
+    // 不响应弹窗外空白点击——编辑台词时容易误触退出；关闭只用 ✕ 或 Esc
+    /* ---- 上/下一镜头连续审校 ---- */
+    async function switchShot(delta){
+      const idx = doc.shots.findIndex(s => s.id === sh.id);
+      const nxt = doc.shots[idx + delta];
+      if(!nxt) return;
+      clearTimeout(saveTimer);                 // 冲刷未落盘的台词修改
+      await saveSubs().catch(()=>{});
+      openModal(nxt.id);
+    }
+    $("#mprevshot").onclick = () => switchShot(-1);
+    $("#mnextshot").onclick = () => switchShot(1);
+    window.__shotNav = switchShot;             // 供全局快捷键调用
+    $("#selall").onclick = () => {
+      selFrames = new Set(sh.others.slice(0, -1)); syncSel(); };   // 留末帧防删空
+    $("#selnone").onclick = () => { selFrames = new Set(); syncSel(); };
+    $("#selinv").onclick = () => {
+      selFrames = new Set(sh.others.filter(f => !selFrames.has(f) &&
+        !(selFrames.size === 0 && f === sh.others[sh.others.length-1])));
+      syncSel(); };
+    $("#mdel").onclick = async () => {
+      if(!selFrames.size) return toast("先勾选要删的帧");
+      if(!confirm(`删除镜头 #${sh.id} 中勾选的 ${selFrames.size} 帧？`)) return;
+      try{ doc = await api("PATCH",`/api/tasks/${TE}/shots/${sh.id}/frames`,
+          {remove:[...selFrames]});
+        toast("已删除", true); drawGrid();
+        const ns = doc.shots.find(s=>s.id===sh.id);
+        ns ? openModal(sh.id) : close();
+      }catch(e){ toast(e.message); }
+    };
+    async function doMove(target){
+      if(!selFrames.size) return toast("先勾选要移动的帧");
+      const txt = {prev:"移到上一镜头",next:"移到下一镜头",new:"拆分为新镜头"}[target];
+      if(!confirm(`把勾选的 ${selFrames.size} 帧${txt}？`)) return;
+      try{
+        doc = await api("POST",`/api/tasks/${TE}/shots/${sh.id}/move`,
+          {frames:[...selFrames], target});
+        toast("已"+txt, true); drawGrid();
+        if(doc.emptied){ close(); return; }
+        const ns = doc.shots.find(s=>s.id===sh.id);
+        ns ? openModal(sh.id) : close();
+      }catch(e){ toast(e.message); }
+    }
+    $("#mprev").onclick = () => doMove("prev");
+    $("#mnext").onclick = () => doMove("next");
+    $("#mnew").onclick = () => doMove("new");
+    $("#mmerge").onclick = async () => {
+      if(sh.id===doc.shots[0].id) return toast("第一个镜头不能并入");
+      if(!confirm(`把镜头 #${sh.id} 并入上一镜头？`)) return;
+      try{ doc = await api("PATCH",`/api/tasks/${TE}/shots/${sh.id}`,{merge:true});
+        toast("已并入", true); drawGrid(); close();
+      }catch(e){ toast(e.message); }
+    };
+    $("#mkill").onclick = async () => {
+      if(!confirm(`删除整个镜头 #${sh.id}（${sh.others.length} 帧）？`)) return;
+      try{ doc = await api("DELETE",`/api/tasks/${TE}/shots/${sh.id}`);
+        toast("镜头已删除", true); drawGrid(); close();
+      }catch(e){ toast(e.message); }
+    };
+  }
+
+  /* -- 作业浮窗 / 轮询 -- */
+  function drawJob(job){
+    let box = $("#jobbox .jobfloat");
+    if(!box){
+      $("#jobbox").innerHTML = `<div class="jobfloat"><div class="t" id="jt"></div>
+        <div class="bar"><i id="jb" style="width:0%"></i></div>
+        <div id="js" class="muted"></div></div>`;
+      box = $("#jobbox .jobfloat");
+    }
+    $("#jt").textContent = {pipeline:"处理中",reextract:"重抽帧",reanalyze:"重分析",
+                            rebuild:"出稿"}[job.kind]||job.kind;
+    $("#jb").style.width = (job.progress||0)+"%";
+    $("#js").innerHTML = job.steps.map(s=>`${s.status==="done"?"✓":s.status==="running"?"◐":"○"} ${esc(s.name)} ${esc(s.detail)}`).join("<br>");
+  }
+  let wasJob = false;
+  async function tick(){
+    try{ task = await api("GET",`/api/tasks/${TE}`); }
+    catch(e){ return; }
+    if(route().v!=="edit" || route().t!==t) return;
+    const j = task.job;
+    if(j && !j.done){ drawJob(j); wasJob = true; }
+    else if(wasJob){                       // 作业刚结束
+      wasJob = false; $("#jobbox").innerHTML="";
+      if(j && j.error) toast("作业失败："+j.error);
+      else toast("完成", true);
+      ver = Date.now();
+      await loadShots(); drawGrid(); drawPreview(); drawTop();
+    } else {
+      drawTop();                           // 轻量刷新未出稿提示/错误行
+    }
+  }
+
+  await loadTask();
+  await loadShots();
+  if(!["editing","ready","composing","failed"].includes(task.state)){
+    app.innerHTML = `<div class="errbox">任务当前状态：${STATE_TXT[task.state]||task.state}，
+      请先在 <a href="#/task/${TE}/record">录制页</a> 完成处理。</div>`; return;
+  }
+  drawGrid(); drawPreview(); drawTop();
+  if(task.job && !task.job.done){ drawJob(task.job); wasJob = true; }
+  poll = setInterval(tick, 1000);
+}
+
+render();
+</script>
+</body>
+</html>

@@ -58,6 +58,14 @@ class AdbDevice:
             raise RuntimeError("截图失败，adb 返回非 PNG 数据")
         return r.stdout
 
+    def stop_screenrecord(self) -> bool:
+        """SIGINT 设备上所有 screenrecord 进程（触发 mp4 正常收尾）。"""
+        out = self.shell("pgrep", "screenrecord", check=False).strip()
+        pids = [p for p in out.split() if p.isdigit()]
+        for pid in pids:
+            self.shell("kill", "-2", pid, check=False)
+        return bool(pids)
+
     def ensure_ready(self) -> None:
         """确保设备在线（雷电偶尔需要主动 connect）。"""
         subprocess.run(

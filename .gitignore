@@ -10,3 +10,9 @@ __pycache__/
 # 系统
 Thumbs.db
 .DS_Store
+
+# 编辑器
+.vscode/
+
+# 用户下载的成品
+*.pdf
