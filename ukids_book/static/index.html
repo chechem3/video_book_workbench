@@ -151,6 +151,10 @@ input:focus,select:focus{outline:2px solid #bcd7f5;border-color:var(--blue)}
             background:#dfe5ea}
 .subrow input{width:100%;margin-top:5px;padding:5px 9px;font-size:13px}
 #subsStatus{font-size:12px;color:var(--sub)}
+.subsio{width:100%;height:240px;margin:4px 0 6px;
+        font:12.5px/1.5 Consolas,"Microsoft YaHei",monospace;white-space:pre;
+        border:1px solid var(--line);border-radius:8px;padding:8px 10px;resize:vertical}
+.subsio:focus{outline:2px solid #bcd7f5;border-color:var(--blue)}
 .frames{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px}
 .fitem2{position:relative;border-radius:8px;overflow:hidden;
         border:2px solid transparent;background:#dfe5ea;min-width:0}
@@ -609,6 +613,7 @@ async function viewEdit(t){
     <div class="toolbar">
       <button class="primary" id="bbuild">↻ 重出稿</button>
       <a id="apdf" href="#" download><button>⬇ PDF</button></a>
+      <button id="bsubs">🤖 AI 校对</button>
       <span id="dirty"></span>
     </div>
     <div id="errline"></div>
@@ -634,7 +639,7 @@ async function viewEdit(t){
         <option value="a3">A3（297×420mm，大页面）</option>
         <option value="a5">A5（148×210mm，便携）</option>
       </select>
-      <p class="hint">打印用的纸型，300dpi。页面越大，同一段视频分页越少、每页图越大。</p>
+      <p class="hint">打印用的纸型，按毫米精确排版。页面越大，同一段视频分页越少、每页图越大。</p>
       <label>页面方向</label>
       <select id="iori">
         <option value="portrait">纵向（竖版）</option>
@@ -740,6 +745,62 @@ async function viewEdit(t){
     try{ await api("POST",`/api/tasks/${TE}/rebuild`,{});
       toast("出稿中…", true);
     }catch(e){ toast(e.message); }
+  };
+
+  /* -- AI 台词校对：导出编号清单 → 交给 AI → 回复粘贴导回 -- */
+  $("#bsubs").onclick = async () => {
+    let exp;
+    try{ exp = await api("GET",`/api/tasks/${TE}/subs/export`); }
+    catch(e){ return toast(e.message); }
+    $("#modalbox").innerHTML = `
+      <div class="overlay">
+        <div class="modal" style="max-width:860px">
+          <h3><span>🤖 AI 台词校对 · ${exp.count} 条</span>
+              <button id="sxclose">✕ 关闭</button></h3>
+          <p class="muted">三步：① 复制全文给任意 AI（说明已内置）→ ② AI 逐条校对 →
+            ③ 回复整段粘回导入。只认 #编号 / EN / ZH 行，AI 的解释文字自动忽略。</p>
+          <div class="sechead"><b>① 导出（复制给 AI）</b>
+            <span style="flex:1"></span>
+            <button class="mini" id="sxdl">⬇ 下载 .txt</button>
+            <button class="mini primary" id="sxcopy">复制全文</button></div>
+          <textarea class="subsio" id="sxexp" readonly></textarea>
+          <div class="sechead"><b>② 导入 AI 结果</b>
+            <span class="muted">按帧名回写 · 导入值加人工标记，永不被重识别覆盖</span></div>
+          <textarea class="subsio" id="sximp" placeholder="把 AI 的回复整段粘贴到这里…"></textarea>
+          <div class="row"><button class="primary" id="sxgo">导入并保存</button>
+            <span class="muted" id="sxstat"></span></div>
+        </div>
+      </div>`;
+    $("#sxexp").value = exp.content;
+    const close = () => { $("#modalbox").innerHTML=""; window.__shotNav=null; };
+    $("#sxclose").onclick = close;
+    $("#sxcopy").onclick = async () => {
+      try{ await navigator.clipboard.writeText(exp.content); toast("已复制全文", true); }
+      catch(e){ $("#sxexp").select(); document.execCommand("copy"); toast("已复制", true); }
+    };
+    $("#sxdl").onclick = () => {
+      const blob = new Blob([exp.content], {type:"text/plain;charset=utf-8"});
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = ((task&&task.label)||t) + "_台词校对.txt";
+      a.click(); URL.revokeObjectURL(a.href);
+    };
+    $("#sxgo").onclick = async () => {
+      const content = $("#sximp").value.trim();
+      if(!content) return toast("先粘贴 AI 回复");
+      $("#sxstat").textContent = "导入中…";
+      try{
+        const r = await api("POST",`/api/tasks/${TE}/subs/import`, {content});
+        const warn = r.unknown_frames.length + r.dropped.length;
+        $("#sxstat").textContent =
+          `✓ 导入 ${r.applied}/${r.total} 条 · 更新 ${r.changed} · 未变 ${r.unchanged}` +
+          (r.skipped_empty ? ` · 跳过空条目 ${r.skipped_empty}` : "") +
+          (warn ? ` · ⚠ 对不上 ${warn} 条（见控制台）` : "");
+        if(warn) console.warn("对不上的条目", r.unknown_frames, r.dropped);
+        toast(r.changed ? `已更新 ${r.changed} 条台词，重出稿后生效` : "台词无变化", true);
+        await loadShots(); drawGrid();
+      }catch(e){ $("#sxstat").textContent = "失败：" + e.message; toast(e.message); }
+    };
   };
   const cfg = $("#cfg");
   $("#cfgclose").onclick = () => cfg.classList.remove("open");

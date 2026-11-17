@@ -31,7 +31,7 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
 
-from ukids_book import compose, config, extract, ocr, subtitles
+from ukids_book import compose, config, extract, ocr, subtitles, subs_io
 from ukids_book import shots as shots_mod
 from ukids_book.adb import AdbDevice
 from ukids_book.capture import RecordSession, new_task_dir
@@ -309,7 +309,7 @@ def _shot_blocks(tdir: Path, doc: dict, texts: dict) -> list[dict]:
     return out
 
 
-def _job_rebuild(name: str, png: bool, pdf: bool) -> None:
+def _job_rebuild(name: str) -> None:
     def fn(job: Job):
         tdir = _tdir(name)
         t0 = _require_task(name)
@@ -330,35 +330,23 @@ def _job_rebuild(name: str, png: bool, pdf: bool) -> None:
                      sum(len(s["blocks"]) for s in shots_data),
                      len(pages)))
 
-        # ② 渲染 PDF
+        # ② HTML 排版 → Chromium 打印 PDF（文字矢量）+ 逐页 PNG（预览）
+        pdf_cells = [[s["blocks"] for s in cells] for cells in pages]
+        html = compose.build_html(pdf_cells, paper=paper, landscape=landscape,
+                                  tdir=tdir)
         out = config.OUTPUT_DIR / name
         out.mkdir(parents=True, exist_ok=True)
-        step = 1
-        if png:
-            job.step(step, "running", "渲染长图…")
-            flat = [(p, l) for s in shots_data for p, l in s["blocks"]]
-            compose.compose_book_text(flat, out / "book.png")
-            job.step(step, "done")
-            step += 1
-        pages_dir = tdir / "pages"
-        if pages_dir.exists():
-            for f in pages_dir.glob("page_*.png"):
-                f.unlink()
-        pdf_pages = []
-        for cells in pages:                    # 页 = [镜头格,…]，格 = [(path,lines),…]
-            pdf_pages.append([s["blocks"] for s in cells])
-        job.step(step, "running",
-                 "渲染 PDF（%s%s · %d 页/%d 主图）…" % (
+        job.step(1, "running",
+                 "Chromium 渲染 PDF（%s%s · %d 页/%d 主图）…" % (
                      paper.upper(), " 横版" if landscape else "",
-                     len(pages), sum(len(c) for c in pdf_pages)))
-        compose.compose_pdf_multi(pdf_pages, out / "book.pdf",
-                                  pages_dir=pages_dir, paper=paper,
-                                  landscape=landscape)
-        job.step(step, "done", "%d 页" % len(pages))
+                     len(pages), sum(len(c) for c in pdf_cells)))
+        n = compose.render_book(html, tdir, out / "book.pdf",
+                                pages_dir=tdir / "pages")
+        job.step(1, "done", "%d 页" % n)
         t = _require_task(name)
         st = t.get("stats") or {}
         _save_state(t, "ready", error=None,
-                    stats={**st, "pages": len(pages)})
+                    stats={**st, "pages": n})
     return fn
 
 
@@ -426,11 +414,6 @@ class ReanalyzeIn(BaseModel):
     min_shots: int | None = None
 
 
-class RebuildIn(BaseModel):
-    png: bool = False                     # 长图已弃用，默认只出 PDF
-    pdf: bool = True
-
-
 class TaskPatchIn(BaseModel):
     paper: str | None = None
     orientation: str | None = None
@@ -445,6 +428,10 @@ class MoveIn(BaseModel):
 
 class TextsIn(BaseModel):
     texts: dict[str, dict]     # {帧名: {"en":…, "zh":…}}
+
+
+class SubsImportIn(BaseModel):
+    content: str               # AI 校对后的整段回复（含说明文字也可）
 
 
 def _fno(f: str) -> int:
@@ -827,7 +814,7 @@ def shot_move(t: str, sid: int, body: MoveIn):
 
 @app.get("/api/tasks/{t}/shots/{sid}/preview.jpg")
 def shot_preview(t: str, sid: int):
-    """该镜头所在整页的预览（多主图同页堆叠，与出稿同一逻辑）。"""
+    """该镜头所在整页的预览（与出稿同一 HTML 模板实时渲染，含真实页码/装订边）。"""
     task = _require_task(t)
     if task["state"] not in EDITABLE_STATES:
         raise HTTPException(409, "当前状态不可预览")
@@ -840,25 +827,17 @@ def shot_preview(t: str, sid: int):
     texts = ocr.cached_texts(tdir)
     shots_data = _shot_blocks(tdir, doc, texts)
     pages = compose.pack_pages(shots_data, mode=task.get("page_shots", "1"))
-    page = next((p for p in pages if any(s["sid"] == sid for s in p)), None)
-    if not page:
+    pos = next((i for i, p in enumerate(pages)
+                if any(s["sid"] == sid for s in p)), None)
+    if pos is None:
         raise HTTPException(404, "无可预览内容")
-    pw, ph = compose.page_geom(task.get("paper", "a4"),
-                               task.get("orientation", "portrait") == "landscape")
-    cells = []
-    for s in page:
-        b = []
-        for path, lines in s["blocks"]:
-            img = Image.open(path).convert("RGB")
-            w2, h2 = img.size
-            b.append((img.crop((0, 0, w2,
-                     int(h2 * (1 - config.SUBTITLE_BAND_CROP)))), lines))
-        cells.append(b)
-    page_img = compose.render_page_multi(cells, 0, 1, pw, ph)
-    page_img.thumbnail((880, 4000))
-    buf = io.BytesIO()
-    page_img.convert("RGB").save(buf, "JPEG", quality=88)
-    return Response(buf.getvalue(), media_type="image/jpeg")
+    html = compose.build_html([[s["blocks"] for s in pages[pos]]],
+                              paper=task.get("paper", "a4"),
+                              landscape=task.get("orientation",
+                                                 "portrait") == "landscape",
+                              tdir=tdir, first_idx=pos, total=len(pages))
+    jpeg = compose.render_page_jpeg(html, tdir, tag="%s_%d" % (t, sid))
+    return Response(jpeg, media_type="image/jpeg")
 
 
 @app.get("/api/tasks/{t}/shots/{sid}/strips")
@@ -916,6 +895,29 @@ def shot_ocr(t: str, sid: int):
     return {"frames": names, "texts": ocr.cached_texts(tdir, sh["others"])}
 
 
+@app.get("/api/tasks/{t}/subs/export")
+def subs_export(t: str):
+    """全任务台词 → 交给 AI 校对的编号清单（只读，任何状态可导）。"""
+    task = _require_task(t)
+    tdir = _tdir(t)
+    doc = _read_doc(tdir)
+    if not doc:
+        raise HTTPException(404, "尚无 shots.yaml（先完成处理管线）")
+    text, frames = subs_io.build_export(task["label"], doc,
+                                        ocr.cached_texts(tdir))
+    return {"content": text, "count": len(frames)}
+
+
+@app.post("/api/tasks/{t}/subs/import")
+def subs_import(t: str, body: SubsImportIn):
+    """导回 AI 校对结果：按帧名回写 subs.json（非空=人工值，永不被覆盖）。"""
+    tdir = _require_editable(t)
+    doc = _read_doc(tdir)
+    if not doc:
+        raise HTTPException(404, "尚无 shots.yaml")
+    return subs_io.run_import(tdir, doc, ocr.cached_texts(tdir), body.content)
+
+
 @app.post("/api/tasks/{t}/reextract")
 def reextract(t: str, body: ReextractIn):
     with _LOCK:
@@ -948,7 +950,7 @@ def reanalyze(t: str, body: ReanalyzeIn):
 
 
 @app.post("/api/tasks/{t}/rebuild")
-def rebuild(t: str, body: RebuildIn):
+def rebuild(t: str):
     with _LOCK:
         task = _require_task(t)
         if task["state"] not in EDITABLE_STATES:
@@ -956,16 +958,9 @@ def rebuild(t: str, body: RebuildIn):
         _ensure_no_job(t)
         if not shots_mod.read_shots(_tdir(t)):
             raise HTTPException(400, "没有镜头数据，无法出稿")
-        steps, spans = ["组稿排版"], [15]
-        if body.png:
-            steps.append("长图")
-            spans.append(20)
-        if body.pdf:
-            steps.append("PDF")
-            spans.append(40)
         _save_state(task, "composing", error=None)
-        job = Job("rebuild", steps, spans)
-        _start_job(t, job, _job_rebuild(t, body.png, body.pdf))
+        job = Job("rebuild", ["组稿排版", "PDF"], [30, 70])
+        _start_job(t, job, _job_rebuild(t))
     return {"ok": True, "state": "composing"}
 
 
