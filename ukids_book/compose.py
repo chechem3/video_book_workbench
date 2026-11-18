@@ -114,7 +114,7 @@ def _text_units(s: str) -> float:
 
 
 def _est_caption_mm(lines: list[tuple[str, str]], text_w_mm: float,
-                    fs_pt: float) -> float:
+                    fs_pt: float, two_col: bool = False) -> float:
     """页底台词块高度估算（mm）——只用于选列数，实际高度由浏览器排版。"""
     fs_mm = fs_pt / 72 * 25.4
     lh, gap = fs_mm * 1.35, fs_mm * 0.35       # 与模板 .caption 行距/条距一致
@@ -126,6 +126,8 @@ def _est_caption_mm(lines: list[tuple[str, str]], text_w_mm: float,
             w = _text_units(s.strip()) * fs_mm
             h += max(1, math.ceil(w / max(1.0, text_w_mm))) * lh
         h += gap
+    if two_col:
+        h /= 2                                  # 双栏约省一半高度
     return h + fs_mm * 0.2
 
 
@@ -151,7 +153,9 @@ def _page_data(cells: list, idx: int, total: int, pw: int, ph: int,
 
     n = len(images)
     has_cap = bool(lines)
-    cap_h = _est_caption_mm(lines, inner_w - 6, fs_pt) if has_cap else 0.0
+    two_col = len(lines) >= 3                  # ≥3 条自动双栏：填满右侧、高度减半
+    cap_h = (_est_caption_mm(lines, inner_w - 6, fs_pt, two_col=two_col)
+             if has_cap else 0.0)
     avail_h = ph - MARGIN_OUT_MM * 2 - cap_h - (CAPTION_GAP_MM if has_cap else 0)
     ar = IMG_AR
     if images:
@@ -173,15 +177,16 @@ def _page_data(cells: list, idx: int, total: int, pw: int, ph: int,
     else:
         cols, rows, grid_h = 1, 0, 0.0
 
-    # 满版背景：单图页纵向留白过多时，用模糊放大图铺底（画册常用手法）
+    # 满版背景：纵向留白过多时用模糊放大图铺底（单图/多图页一视同仁）
     bg = None
-    if n == 1:
+    if n:
         leftover = 1 - grid_h / max(avail_h, .1)
         if leftover > BG_LEFTOVER:
             bg = images[0]
 
     return {"idx": idx, "total": total, "bind_left": bind_left,
             "pl": pl, "pr": pr, "fs_pt": fs_pt, "crop": style == "crop",
+            "two_col": two_col,
             "images": images, "cols": cols, "rows": rows, "cell_h": cell_h,
             "lines": [(en, zh) for en, zh in lines], "bg": bg}
 
@@ -213,6 +218,8 @@ html,body{margin:0;padding:0;background:#fff;font-family:"Microsoft YaHei",sans-
      object-position:50% 35%}
 .caption{position:relative;z-index:2;margin-top:{{ cgap }}mm;line-height:1.35;
         color:#344452;min-width:0;padding:0 2mm}
+.caption.twocol{columns:2;column-gap:7mm;column-rule:0.3pt solid #dfe5ea}
+.caption .pair{break-inside:avoid}
 .page.onbg .caption{background:rgba(255,255,255,.74);border-radius:2mm;
                    padding:2mm 3mm;margin-left:auto;width:fit-content;max-width:100%}
 .caption .pair{margin:0 0 .35em}
@@ -233,7 +240,7 @@ html,body{margin:0;padding:0;background:#fff;font-family:"Microsoft YaHei",sans-
   </div>
   {% endif %}
   {% if p.lines %}
-  <div class="caption" style="font-size:{{ p.fs_pt }}pt">
+  <div class="caption{% if p.two_col %} twocol{% endif %}" style="font-size:{{ p.fs_pt }}pt">
     {% for en, zh in p.lines %}<div class="pair">{% if en %}<p>{{ en }}</p>{% endif %}
     {%- if zh %}<p>{{ zh }}</p>{% endif %}</div>
     {%- endfor %}
