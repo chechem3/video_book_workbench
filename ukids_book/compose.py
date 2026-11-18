@@ -25,6 +25,9 @@ MARGIN_BIND_MM = 25                          # 装订侧（奇数页左、偶数
 GRID_GAP_MM = 3.5                            # 网格格间距
 CAPTION_GAP_MM = 5                           # 图区-页底台词间隔
 BG_LEFTOVER = 0.20                           # 单图页留白超此比例 → 模糊满版背景
+CROP_MIN_AR = 1.3                            # 满格裁切下限：格子比例不深于此（防裁太狠）
+CROP_FLAT_AR = 2.0                           # 满格裁切上限：格子不扁于此（防上下裁掉脸）
+IMG_AR = 1920 / 885                          # 裁带后视频帧的固有比例
 
 
 def page_mm(paper: str, landscape: bool = False) -> tuple[int, int]:
@@ -78,6 +81,33 @@ def _grid_plan(n_imgs: int, cw: float, ch: float, gap: float,
     return (best or (0.0, 1))[1]
 
 
+def _grid_plan_crop(n_imgs: int, cw: float, ch: float, gap: float):
+    """满格裁切版式选列数：格子取 CROP_MIN_AR 深裁（受可用高度限制），面积最大者胜。
+
+    超 CROP_FLAT_AR 的超宽格子（页面太矮/台词太高所致）降权——垂直裁切
+    有切到角色的风险，面积相近时优先选比例合规的排法。
+    返回 (cols, rows, cell_h_mm)。图片用 object-fit:cover 填满格子。
+    """
+    best = None
+    for cols in range(1, n_imgs + 1):
+        rows = (n_imgs + cols - 1) // cols
+        scw = (cw - gap * (cols - 1)) / cols
+        if scw <= 0:
+            continue
+        per_row = (ch - gap * (rows - 1)) / rows
+        sch = min(per_row, scw / CROP_MIN_AR)  # 格子最深裁到 CROP_MIN_AR
+        if sch <= 0:
+            continue
+        area = scw * sch
+        if scw / sch > CROP_FLAT_AR:
+            area *= 0.75                       # 超宽格子降权
+        if best is None or area > best[0]:
+            best = (area, cols, rows, round(sch, 1))
+    if best is None:
+        return 1, n_imgs, round(max(1.0, cw / CROP_MIN_AR), 1)
+    return best[1], best[2], best[3]
+
+
 def _text_units(s: str) -> float:
     """文本宽度估算（em）：CJK≈1，其余≈0.55。"""
     return sum(1.0 if ord(c) > 0x2E80 else 0.55 for c in s)
@@ -100,8 +130,12 @@ def _est_caption_mm(lines: list[tuple[str, str]], text_w_mm: float,
 
 
 def _page_data(cells: list, idx: int, total: int, pw: int, ph: int,
-               cache_dir: Path | None) -> dict:
-    """一页镜头格 → 模板数据。cells = [镜头格,…]，格 = [(主图路径, lines),…]。"""
+               cache_dir: Path | None, style: str = "crop") -> dict:
+    """一页镜头格 → 模板数据。cells = [镜头格,…]，格 = [(主图路径, lines),…]。
+
+    style: crop=满格裁切（cover 填格，格子比例不深于 CROP_MIN_AR）；
+           classic=原比例保真（contain 居中，网格撑满可用区）。
+    """
     bind_left = idx % 2 == 0
     pl = MARGIN_BIND_MM if bind_left else MARGIN_OUT_MM
     pr = MARGIN_OUT_MM if bind_left else MARGIN_BIND_MM
@@ -119,25 +153,36 @@ def _page_data(cells: list, idx: int, total: int, pw: int, ph: int,
     has_cap = bool(lines)
     cap_h = _est_caption_mm(lines, inner_w - 6, fs_pt) if has_cap else 0.0
     avail_h = ph - MARGIN_OUT_MM * 2 - cap_h - (CAPTION_GAP_MM if has_cap else 0)
-    ar = 1920 / 885                             # 裁带后 16:9 的实际比例
+    ar = IMG_AR
     if images:
         with Image.open(images[0]) as im:
             ar = im.width / im.height
-    cols = _grid_plan(n, inner_w, avail_h, GRID_GAP_MM, ar) if n else 1
-    rows = (n + cols - 1) // cols if n else 0
+
+    cell_h = None
+    if n:
+        if style == "crop":
+            cols, rows, cell_h = _grid_plan_crop(n, inner_w, avail_h,
+                                                 GRID_GAP_MM)
+            grid_h = rows * cell_h + GRID_GAP_MM * (rows - 1)
+        else:
+            cols = _grid_plan(n, inner_w, avail_h, GRID_GAP_MM, ar)
+            rows = (n + cols - 1) // cols
+            cell_w = (inner_w - GRID_GAP_MM * (cols - 1)) / cols
+            ih = min((avail_h - GRID_GAP_MM * (rows - 1)) / rows, cell_w / ar)
+            grid_h = rows * ih + GRID_GAP_MM * (rows - 1)
+    else:
+        cols, rows, grid_h = 1, 0, 0.0
 
     # 满版背景：单图页纵向留白过多时，用模糊放大图铺底（画册常用手法）
     bg = None
     if n == 1:
-        cell_w = (inner_w - GRID_GAP_MM * (cols - 1)) / cols
-        ih = min((avail_h - GRID_GAP_MM * (rows - 1)) / rows, cell_w / ar)
-        leftover = 1 - (rows * ih + GRID_GAP_MM * (rows - 1)) / max(avail_h, .1)
+        leftover = 1 - grid_h / max(avail_h, .1)
         if leftover > BG_LEFTOVER:
             bg = images[0]
 
     return {"idx": idx, "total": total, "bind_left": bind_left,
-            "pl": pl, "pr": pr, "fs_pt": fs_pt,
-            "images": images, "cols": cols, "rows": rows,
+            "pl": pl, "pr": pr, "fs_pt": fs_pt, "crop": style == "crop",
+            "images": images, "cols": cols, "rows": rows, "cell_h": cell_h,
             "lines": [(en, zh) for en, zh in lines], "bg": bg}
 
 
@@ -159,9 +204,13 @@ html,body{margin:0;padding:0;background:#fff;font-family:"Microsoft YaHei",sans-
 .grid{position:relative;z-index:2;flex:1;min-height:0;display:grid;
      grid-template-columns:repeat(var(--cols),1fr);
      grid-template-rows:repeat(var(--rows),1fr);gap:{{ gap }}mm}
+.grid.crop{grid-template-rows:repeat(var(--rows),var(--ch));
+     align-content:center}
 .cell{min-width:0;min-height:0;overflow:hidden;display:flex;
      align-items:center;justify-content:center}
 .cell img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.grid.crop .cell img{width:100%;height:100%;object-fit:cover;
+     object-position:50% 35%}
 .caption{position:relative;z-index:2;margin-top:{{ cgap }}mm;line-height:1.35;
         color:#344452;min-width:0;padding:0 2mm}
 .page.onbg .caption{background:rgba(255,255,255,.74);border-radius:2mm;
@@ -170,6 +219,7 @@ html,body{margin:0;padding:0;background:#fff;font-family:"Microsoft YaHei",sans-
 .caption .pair:last-child{margin-bottom:0}
 .caption p{margin:0}
 .pageno{position:absolute;z-index:2;bottom:4mm;font-size:8.5pt;color:#787878}
+.onbg .pageno{color:#4a5560}
 </style></head><body>
 {% for p in pages %}
 <div class="page{% if loop.last %} last{% endif %}{% if p.bg %} onbg{% endif %}"
@@ -177,7 +227,8 @@ html,body{margin:0;padding:0;background:#fff;font-family:"Microsoft YaHei",sans-
   {% if p.bg %}<div class="bg" style="background-image:url('{{ p.bg }}')"></div>
   <div class="veil"></div>{% endif %}
   {% if p.images %}
-  <div class="grid" style="--cols:{{ p.cols }};--rows:{{ p.rows }}">
+  <div class="grid{% if p.crop %} crop{% endif %}"
+       style="--cols:{{ p.cols }};--rows:{{ p.rows }};{% if p.cell_h %}--ch:{{ p.cell_h }}mm;{% endif %}">
     {% for im in p.images %}<div class="cell"><img src="{{ im }}" alt=""></div>{% endfor %}
   </div>
   {% endif %}
@@ -199,12 +250,12 @@ _ENV = Environment(autoescape=True)
 
 def build_html(pages_cells: list, paper: str = "a4", landscape: bool = False,
                tdir: Path | None = None, first_idx: int = 0,
-               total: int | None = None) -> str:
+               total: int | None = None, style: str = "crop") -> str:
     """页格列表 → 单文件 HTML。图片/背景写成相对 tdir 的 POSIX 路径。"""
     pw, ph = page_mm(paper, landscape)
     total = len(pages_cells) if total is None else total
     pages = [_page_data(c, first_idx + i, total, pw, ph,
-                        tdir / "maincache" if tdir else None)
+                        tdir / "maincache" if tdir else None, style=style)
              for i, c in enumerate(pages_cells)]
     for p in pages:                              # 绝对路径 → 相对 HTML 的路径
         conv = (lambda ps: [im.relative_to(tdir).as_posix() for im in ps]) \

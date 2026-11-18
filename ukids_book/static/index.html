@@ -654,6 +654,13 @@ async function viewEdit(t){
       </select>
       <p class="hint">按镜头顺序切页：2 个=相邻两镜头左右并排，4 个=四镜头田字格。
         台词跟在各自主图下方。</p>
+      <label>版式风格</label>
+      <select id="ilayout">
+        <option value="crop">满格裁切（默认，利用率高）</option>
+        <option value="classic">原比例保真（不裁画面）</option>
+      </select>
+      <p class="hint">满格裁切：图片铺满格子（裁切下限 1.3:1，左右最多裁一点），
+        纵向大留白自动加模糊满版背景；保真：图片完整显示居中，页面留白较多。</p>
       <p class="hint">台词为 OCR 预填 + 弹层内人工校对（对照字幕截图修改），出稿以校对后的文本排版。</p>
 
       <h4>重抽帧（破坏性）</h4>
@@ -812,15 +819,17 @@ async function viewEdit(t){
     $("#iori").value = (task && task.orientation) || "portrait";
     const psVal = (task && task.page_shots) || "1";
     $("#ipageshots").value = ["1","2","4"].includes(psVal) ? psVal : "1";
+    $("#ilayout").value = (task && task.layout_style) === "classic" ? "classic" : "crop";
     cfg.classList.add("open");
   };
   $("#ipaper").onchange = savePrefs;
   $("#iori").onchange = savePrefs;
   $("#ipageshots").onchange = savePrefs;
+  $("#ilayout").onchange = savePrefs;
   async function savePrefs(){
     try{ await api("PATCH",`/api/tasks/${TE}`,
         {paper: $("#ipaper").value, orientation: $("#iori").value,
-         page_shots: $("#ipageshots").value});
+         page_shots: $("#ipageshots").value, layout_style: $("#ilayout").value});
       toast("已保存，出稿时生效", true);
     }catch(e){ toast(e.message); }
   }

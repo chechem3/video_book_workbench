@@ -333,7 +333,8 @@ def _job_rebuild(name: str) -> None:
         # ② HTML 排版 → Chromium 打印 PDF（文字矢量）+ 逐页 PNG（预览）
         pdf_cells = [[s["blocks"] for s in cells] for cells in pages]
         html = compose.build_html(pdf_cells, paper=paper, landscape=landscape,
-                                  tdir=tdir)
+                                  tdir=tdir,
+                                  style=t0.get("layout_style", "crop"))
         out = config.OUTPUT_DIR / name
         out.mkdir(parents=True, exist_ok=True)
         job.step(1, "running",
@@ -418,6 +419,7 @@ class TaskPatchIn(BaseModel):
     paper: str | None = None
     orientation: str | None = None
     page_shots: str | None = None         # auto | 1 | 2 | 4（每页镜头数）
+    layout_style: str | None = None       # crop | classic（版式风格）
     label: str | None = None          # 重命名（仅显示名，目录不动）
 
 
@@ -655,6 +657,10 @@ def task_patch(t: str, body: TaskPatchIn):
         if body.page_shots not in ("1", "2", "4"):
             raise HTTPException(400, "page_shots 须为 1/2/4")
         task["page_shots"] = body.page_shots
+    if body.layout_style is not None:
+        if body.layout_style not in ("crop", "classic"):
+            raise HTTPException(400, "layout_style 须为 crop/classic")
+        task["layout_style"] = body.layout_style
     if body.label is not None:
         label = body.label.strip()
         if not VALID_LABEL.fullmatch(label):
@@ -665,6 +671,7 @@ def task_patch(t: str, body: TaskPatchIn):
     return {"paper": task.get("paper", "a4"),
             "orientation": task.get("orientation", "portrait"),
             "page_shots": task.get("page_shots", "1"),
+            "layout_style": task.get("layout_style", "crop"),
             "label": task["label"]}
 
 
@@ -835,7 +842,8 @@ def shot_preview(t: str, sid: int):
                               paper=task.get("paper", "a4"),
                               landscape=task.get("orientation",
                                                  "portrait") == "landscape",
-                              tdir=tdir, first_idx=pos, total=len(pages))
+                              tdir=tdir, first_idx=pos, total=len(pages),
+                              style=task.get("layout_style", "crop"))
     jpeg = compose.render_page_jpeg(html, tdir, tag="%s_%d" % (t, sid))
     return Response(jpeg, media_type="image/jpeg")
 
