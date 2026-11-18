@@ -24,10 +24,8 @@ MARGIN_OUT_MM = 15                           # 外侧/上下
 MARGIN_BIND_MM = 25                          # 装订侧（奇数页左、偶数页右）
 GRID_GAP_MM = 3.5                            # 网格格间距
 CAPTION_GAP_MM = 5                           # 图区-页底台词间隔
-BG_LEFTOVER = 0.20                           # 单图页留白超此比例 → 模糊满版背景
-CROP_MIN_AR = 1.3                            # 满格裁切下限：格子比例不深于此（防裁太狠）
-CROP_FLAT_AR = 2.0                           # 满格裁切上限：格子不扁于此（防上下裁掉脸）
-IMG_AR = 1920 / 885                          # 裁带后视频帧的固有比例
+CROP_MIN_AR = 1.3                            # 满格裁切下限：格子比例不深于此（防左右裁太狠）
+IMG_AR = 1920 / 885                          # 裁带后视频帧的固有比例（垂直方向不裁过它）
 
 
 def page_mm(paper: str, landscape: bool = False) -> tuple[int, int]:
@@ -82,13 +80,14 @@ def _grid_plan(n_imgs: int, cw: float, ch: float, gap: float,
 
 
 def _grid_plan_crop(n_imgs: int, cw: float, ch: float, gap: float):
-    """满格裁切版式选列数：格子取 CROP_MIN_AR 深裁（受可用高度限制），面积最大者胜。
+    """满格裁切版式选列数：格子比例钳在 [CROP_MIN_AR, IMG_AR] 区间的排法优先。
 
-    超 CROP_FLAT_AR 的超宽格子（页面太矮/台词太高所致）降权——垂直裁切
-    有切到角色的风险，面积相近时优先选比例合规的排法。
+    格子比图片扁（ar > IMG_AR）会垂直裁掉画面——信息丢失，故只在**所有**
+    排法都超宽时才接受（此时按 面积×IMG_AR/ar 打分，偏向接近不裁的）。
     返回 (cols, rows, cell_h_mm)。图片用 object-fit:cover 填满格子。
     """
-    best = None
+    adm = None                                 # 合规解（不垂直裁）
+    vio = None                                 # 全员超宽时的兜底解
     for cols in range(1, n_imgs + 1):
         rows = (n_imgs + cols - 1) // cols
         scw = (cw - gap * (cols - 1)) / cols
@@ -98,11 +97,16 @@ def _grid_plan_crop(n_imgs: int, cw: float, ch: float, gap: float):
         sch = min(per_row, scw / CROP_MIN_AR)  # 格子最深裁到 CROP_MIN_AR
         if sch <= 0:
             continue
-        area = scw * sch
-        if scw / sch > CROP_FLAT_AR:
-            area *= 0.75                       # 超宽格子降权
-        if best is None or area > best[0]:
-            best = (area, cols, rows, round(sch, 1))
+        ar_cell = scw / sch
+        score = scw * sch if ar_cell <= IMG_AR + .05 else \
+            scw * sch * IMG_AR / ar_cell      # 越扁罚越重
+        cand = (score, cols, rows, round(sch, 1), ar_cell)
+        if ar_cell <= IMG_AR + .05:
+            if adm is None or score > adm[0]:
+                adm = cand
+        elif vio is None or score > vio[0]:
+            vio = cand
+    best = adm or vio
     if best is None:
         return 1, n_imgs, round(max(1.0, cw / CROP_MIN_AR), 1)
     return best[1], best[2], best[3]
@@ -163,30 +167,26 @@ def _page_data(cells: list, idx: int, total: int, pw: int, ph: int,
             ar = im.width / im.height
 
     cell_h = None
+    flat = False
     if n:
         if style == "crop":
             cols, rows, cell_h = _grid_plan_crop(n, inner_w, avail_h,
                                                  GRID_GAP_MM)
-            grid_h = rows * cell_h + GRID_GAP_MM * (rows - 1)
+            scw = (inner_w - GRID_GAP_MM * (cols - 1)) / cols
+            flat = scw / cell_h > IMG_AR + .05   # 格子比图片还扁：cover 必裁上下
         else:
             cols = _grid_plan(n, inner_w, avail_h, GRID_GAP_MM, ar)
             rows = (n + cols - 1) // cols
-            cell_w = (inner_w - GRID_GAP_MM * (cols - 1)) / cols
-            ih = min((avail_h - GRID_GAP_MM * (rows - 1)) / rows, cell_w / ar)
-            grid_h = rows * ih + GRID_GAP_MM * (rows - 1)
     else:
-        cols, rows, grid_h = 1, 0, 0.0
+        cols, rows = 1, 0
 
-    # 满版背景：纵向留白过多时用模糊放大图铺底（单图/多图页一视同仁）
-    bg = None
-    if n:
-        leftover = 1 - grid_h / max(avail_h, .1)
-        if leftover > BG_LEFTOVER:
-            bg = images[0]
+    # 满版背景：所有页统一铺模糊底（用户定稿：有的有底有的没底观感怪）；
+    # 留白、格缝、letterbox 空带都由模糊图补满，观感一致
+    bg = images[0] if n else None
 
     return {"idx": idx, "total": total, "bind_left": bind_left,
             "pl": pl, "pr": pr, "fs_pt": fs_pt, "crop": style == "crop",
-            "two_col": two_col,
+            "two_col": two_col, "flat": flat,
             "images": images, "cols": cols, "rows": rows, "cell_h": cell_h,
             "lines": [(en, zh) for en, zh in lines], "bg": bg}
 
@@ -216,6 +216,7 @@ html,body{margin:0;padding:0;background:#fff;font-family:"Microsoft YaHei",sans-
 .cell img{max-width:100%;max-height:100%;object-fit:contain;display:block}
 .grid.crop .cell img{width:100%;height:100%;object-fit:cover;
      object-position:50% 35%}
+.grid.crop.flat .cell img{object-fit:contain}   /* 超扁页：完整显示不裁 */
 .caption{position:relative;z-index:2;margin-top:{{ cgap }}mm;line-height:1.35;
         color:#344452;min-width:0;padding:0 2mm}
 .caption.twocol{columns:2;column-gap:7mm;column-rule:0.3pt solid #dfe5ea}
@@ -234,7 +235,7 @@ html,body{margin:0;padding:0;background:#fff;font-family:"Microsoft YaHei",sans-
   {% if p.bg %}<div class="bg" style="background-image:url('{{ p.bg }}')"></div>
   <div class="veil"></div>{% endif %}
   {% if p.images %}
-  <div class="grid{% if p.crop %} crop{% endif %}"
+  <div class="grid{% if p.crop %} crop{% endif %}{% if p.flat %} flat{% endif %}"
        style="--cols:{{ p.cols }};--rows:{{ p.rows }};{% if p.cell_h %}--ch:{{ p.cell_h }}mm;{% endif %}">
     {% for im in p.images %}<div class="cell"><img src="{{ im }}" alt=""></div>{% endfor %}
   </div>
